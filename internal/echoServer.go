@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"time"
+
+	"github.com/google/uuid"
 )
 
 const workersNum = 10
@@ -68,10 +69,10 @@ func processConn(ctx context.Context, conn net.Conn) {
 	}
 
 	scanner := bufio.NewScanner(conn)
+	senderId := uuid.New().ID()
 	for {
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil {
+			if err = scanner.Err(); err != nil {
 				slog.Error(err.Error())
 			}
 
@@ -84,7 +85,9 @@ func processConn(ctx context.Context, conn net.Conn) {
 
 			return
 		}
-		msg := scanner.Text() + "\n"
-		conn.Write([]byte(msg))
+		rawText := scanner.Text()
+		msg := ParseIncomingMessage(rawText, fmt.Sprintf("%03d", senderId))
+
+		conn.Write([]byte(FormatMessage(msg) + "\n"))
 	}
 }
