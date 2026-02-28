@@ -1,13 +1,11 @@
 package internal
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
 	"net"
-
-	"github.com/google/uuid"
+	"time"
 )
 
 const workersNum = 10
@@ -63,31 +61,13 @@ func processConn(ctx context.Context, conn net.Conn) {
 		}
 	}(conn, []byte("Close connection\n"))
 
-	_, err := conn.Write([]byte("connected to server\n"))
-	if err != nil {
-		slog.Error(err.Error())
+	client := Client{
+		ID:       GenerateClientID(),
+		Conn:     conn,
+		JoinTime: time.Now(),
 	}
 
-	scanner := bufio.NewScanner(conn)
-	senderId := uuid.New().ID()
-	for {
-		if !scanner.Scan() {
-			if err = scanner.Err(); err != nil {
-				slog.Error(err.Error())
-			}
-
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				if ctx.Err() != nil {
-					return
-				}
-				continue
-			}
-
-			return
-		}
-		rawText := scanner.Text()
-		msg := ParseIncomingMessage(rawText, fmt.Sprintf("%03d", senderId))
-
-		conn.Write([]byte(FormatMessage(msg) + "\n"))
+	if err := client.HandleClient(ctx); err != nil {
+		slog.Error(err.Error())
 	}
 }
