@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,7 +27,7 @@ func FormatMessage(msg ChatMessage) string {
 		client = "***"
 	}
 
-	return fmt.Sprintf("[%s] %s %s", timestamp, client, msg.Content)
+	return fmt.Sprintf("[%s] %s %s\n", timestamp, client, msg.Content)
 }
 
 func ParseIncomingMessage(raw string, senderID string) ChatMessage {
@@ -42,4 +43,9 @@ func ParseIncomingMessage(raw string, senderID string) ChatMessage {
 		MessageType: "user",
 		Timestamp:   time.Now(),
 	}
+}
+
+func (m *ChatMessage) PureClientID() string {
+	reg := regexp.MustCompile("[^0-9]")
+	return reg.ReplaceAllString(m.ClientID, "")
 }

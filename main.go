@@ -13,8 +13,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT)
 	defer cancel()
 
+	hub := internal.NewHub()
+	go hub.Run()
+
 	go func() {
-		err := internal.StartEchoServer(ctx, ":8080")
+		err := internal.StartEchoServer(ctx, hub, ":8080")
 		if err != nil {
 			slog.Error(err.Error())
 			return

@@ -17,11 +17,13 @@ type Client struct {
 	JoinTime time.Time `json:"join_time"`
 }
 
-func (c *Client) HandleClient(ctx context.Context) error {
+func (c *Client) HandleClient(ctx context.Context, hub *Hub) error {
 	defer func() {
+		hub.unregister <- c
 		slog.Info("Client disconnected from server\n", "userID", c.ID)
 	}()
 
+	hub.register <- c
 	slog.Info("Client connected to server\n", "UserID", c.ID)
 	scanner := bufio.NewScanner(c.Conn)
 	for {
@@ -44,10 +46,7 @@ func (c *Client) HandleClient(ctx context.Context) error {
 		msg := ParseIncomingMessage(rawText, c.ID)
 
 		slog.Info("got client message", "userID", c.ID, "message", rawText)
-		if _, err := c.Conn.Write([]byte(FormatMessage(msg) + "\n")); err != nil {
-			slog.Warn(err.Error())
-			continue
-		}
+		hub.broadcast <- msg
 	}
 }
 

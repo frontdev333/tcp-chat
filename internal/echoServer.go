@@ -10,7 +10,7 @@ import (
 
 const workersNum = 10
 
-func StartEchoServer(ctx context.Context, port string) error {
+func StartEchoServer(ctx context.Context, hub *Hub, port string) error {
 	fmt.Println("server started")
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
@@ -22,7 +22,7 @@ func StartEchoServer(ctx context.Context, port string) error {
 	defer close(jobs)
 
 	for i := 0; i < workersNum; i++ {
-		go handleConn(ctx, jobs)
+		go handleConn(ctx, jobs, hub)
 	}
 
 	for {
@@ -41,18 +41,18 @@ func StartEchoServer(ctx context.Context, port string) error {
 	}
 }
 
-func handleConn(ctx context.Context, jobs chan net.Conn) {
+func handleConn(ctx context.Context, jobs chan net.Conn, hub *Hub) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case conn := <-jobs:
-			processConn(ctx, conn)
+			processConn(ctx, conn, hub)
 		}
 	}
 }
 
-func processConn(ctx context.Context, conn net.Conn) {
+func processConn(ctx context.Context, conn net.Conn, hub *Hub) {
 	defer conn.Close()
 	defer func(conn net.Conn, b []byte) {
 		_, err := conn.Write(b)
@@ -67,7 +67,7 @@ func processConn(ctx context.Context, conn net.Conn) {
 		JoinTime: time.Now(),
 	}
 
-	if err := client.HandleClient(ctx); err != nil {
+	if err := client.HandleClient(ctx, hub); err != nil {
 		slog.Error(err.Error())
 	}
 }
