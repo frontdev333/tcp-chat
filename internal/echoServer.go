@@ -53,21 +53,11 @@ func handleConn(ctx context.Context, jobs chan net.Conn, hub *Hub) {
 }
 
 func processConn(ctx context.Context, conn net.Conn, hub *Hub) {
-	defer conn.Close()
-	defer func(conn net.Conn, b []byte) {
-		_, err := conn.Write(b)
-		if err != nil {
-			slog.Error(err.Error())
-		}
-	}(conn, []byte("Close connection\n"))
-
-	client := Client{
+	client := &Client{
 		ID:       GenerateClientID(),
 		Conn:     conn,
 		JoinTime: time.Now(),
 	}
 
-	if err := client.HandleClient(ctx, hub); err != nil {
-		slog.Error(err.Error())
-	}
+	hub.RegisterClient(ctx, client)
 }

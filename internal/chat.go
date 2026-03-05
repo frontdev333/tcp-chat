@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var pureClientIDRegex = regexp.MustCompile("[^0-9]")
+
 type ChatMessage struct {
 	ClientID    string    `json:"client_id"`
 	ClientType  string    `json:"client_type"`
@@ -46,6 +48,5 @@ func ParseIncomingMessage(raw string, senderID string) ChatMessage {
 }
 
 func (m *ChatMessage) PureClientID() string {
-	reg := regexp.MustCompile("[^0-9]")
-	return reg.ReplaceAllString(m.ClientID, "")
+	return pureClientIDRegex.ReplaceAllString(m.ClientID, "")
 }
