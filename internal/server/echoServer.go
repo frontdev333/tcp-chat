@@ -1,8 +1,10 @@
-package internal
+package server
 
 import (
 	"context"
 	"fmt"
+	"frontdev333/tcp-chat/internal"
+	"frontdev333/tcp-chat/internal/hub"
 	"log/slog"
 	"net"
 	"time"
@@ -10,7 +12,7 @@ import (
 
 const workersNum = 10
 
-func StartEchoServer(ctx context.Context, hub *Hub, port string) error {
+func StartEchoServer(ctx context.Context, hub *hub.Hub, port string) error {
 	fmt.Println("server started")
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
@@ -41,7 +43,7 @@ func StartEchoServer(ctx context.Context, hub *Hub, port string) error {
 	}
 }
 
-func handleConn(ctx context.Context, jobs chan net.Conn, hub *Hub) {
+func handleConn(ctx context.Context, jobs chan net.Conn, hub *hub.Hub) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -52,9 +54,9 @@ func handleConn(ctx context.Context, jobs chan net.Conn, hub *Hub) {
 	}
 }
 
-func processConn(ctx context.Context, conn net.Conn, hub *Hub) {
-	client := &Client{
-		ID:       GenerateClientID(),
+func processConn(ctx context.Context, conn net.Conn, hub *hub.Hub) {
+	client := &internal.Client{
+		ID:       internal.GenerateClientID(),
 		Conn:     conn,
 		JoinTime: time.Now(),
 	}

@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"frontdev333/tcp-chat/internal"
+	"frontdev333/tcp-chat/internal/hub"
+	"frontdev333/tcp-chat/internal/server"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,11 +14,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT)
 	defer cancel()
 
-	hub := internal.NewHub()
+	hub := hub.NewHub()
 	go hub.Run()
 
 	go func() {
-		err := internal.StartEchoServer(ctx, hub, ":8080")
+		err := server.StartEchoServer(ctx, hub, ":8080")
 		if err != nil {
 			slog.Error(err.Error())
 			return

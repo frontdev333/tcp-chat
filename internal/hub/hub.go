@@ -1,40 +1,30 @@
-package internal
+package hub
 
 import (
 	"bufio"
 	"context"
+	"frontdev333/tcp-chat/internal"
+	"frontdev333/tcp-chat/internal/chat"
 	"log/slog"
 	"net"
 )
 
 type Hub struct {
-	clients    map[*Client]bool
-	broadcast  chan ChatMessage
-	register   chan *Client
-	unregister chan *Client
-	requests   chan ActiveClientsRequest
+	clients    map[*internal.Client]bool
+	broadcast  chan chat.ChatMessage
+	register   chan *internal.Client
+	unregister chan *internal.Client
+	requests   chan Request
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		clients:    make(map[*Client]bool),
-		broadcast:  make(chan ChatMessage),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		requests:   make(chan ActiveClientsRequest, 1),
+		clients:    make(map[*internal.Client]bool),
+		broadcast:  make(chan chat.ChatMessage),
+		register:   make(chan *internal.Client),
+		unregister: make(chan *internal.Client),
+		requests:   make(chan Request, 1),
 	}
-}
-
-type ActiveClientsResult []string
-
-type ActiveClientsRequest struct {
-	Response chan ActiveClientsResult
-}
-
-type ClientsCountResult []string
-
-type ClientsCountRequest struct {
-	Response chan ClientsCountResult
 }
 
 func (h *Hub) Run() {
@@ -43,49 +33,48 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.clients[client] = true
 		case client := <-h.unregister:
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				client.Conn.Close()
-			}
+			h.delClient(client)
 		case request := <-h.requests:
-			h.sendActiveClients(request)
+			request.execute(h.clients)
 		case msg := <-h.broadcast:
-			h.BroadcastMessage(msg)
+			for _, c := range h.BroadcastMessage(msg) {
+				h.delClient(c)
+			}
 		}
 	}
 }
 
-func (h *Hub) sendActiveClients(request ActiveClientsRequest) {
-	res := make([]string, 0, len(h.clients))
-
-	for c := range h.clients {
-		res = append(res, c.ID)
+func (h *Hub) delClient(client *internal.Client) {
+	if _, ok := h.clients[client]; ok {
+		delete(h.clients, client)
+		client.Conn.Close()
 	}
-
-	request.Response <- res
 }
 
-func (h *Hub) BroadcastMessage(msg ChatMessage) {
+func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
+	var failed []*internal.Client
+
 	for client := range h.clients {
 		if client.ID == msg.PureClientID() {
 			continue
 		}
 
-		if _, err := client.Conn.Write([]byte(FormatMessage(msg))); err != nil {
+		if _, err := client.Conn.Write([]byte(chat.FormatMessage(msg))); err != nil {
 			slog.Error(err.Error())
-			h.unregister <- client
+			failed = append(failed, client)
 			continue
 		}
 	}
+	return failed
 }
 
-func (h *Hub) RegisterClient(ctx context.Context, client *Client) {
+func (h *Hub) RegisterClient(ctx context.Context, client *internal.Client) {
 	h.register <- client
 	slog.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
 	go h.handleClientMessages(ctx, client)
 }
 
-func (h *Hub) handleClientMessages(ctx context.Context, client *Client) {
+func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client) {
 	defer func() {
 		h.unregister <- client
 		slog.Info("Client disconnected from server\n", "userID", client.ID, "Total", h.GetClientCount())
@@ -111,7 +100,7 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *Client) {
 			return
 		}
 		rawText := scanner.Text()
-		msg := ParseIncomingMessage(rawText, client.ID)
+		msg := chat.ParseIncomingMessage(rawText, client.ID)
 
 		slog.Info("got client message", "userID", client.ID, "message", rawText)
 		h.broadcast <- msg
@@ -120,11 +109,13 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *Client) {
 
 func (h *Hub) GetActiveClients() []string {
 	resChan := make(chan ActiveClientsResult, 1)
-	h.requests <- ActiveClientsRequest{resChan}
+	h.requests <- &ActiveClientsRequest{resChan}
 
 	return <-resChan
 }
 
 func (h *Hub) GetClientCount() int {
-	return len(h.GetActiveClients())
+	resChan := make(chan ClientsCountResult, 1)
+	h.requests <- &ClientsCountRequest{resChan}
+	return int(<-resChan)
 }
