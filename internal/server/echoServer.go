@@ -3,14 +3,12 @@ package server
 import (
 	"context"
 	"fmt"
-	"frontdev333/tcp-chat/internal"
 	"frontdev333/tcp-chat/internal/hub"
 	"log/slog"
 	"net"
-	"time"
 )
 
-const workersNum = 10
+const workersNum = 100
 
 func StartEchoServer(ctx context.Context, hub *hub.Hub, port string) error {
 	fmt.Println("server started")
@@ -49,17 +47,7 @@ func handleConn(ctx context.Context, jobs chan net.Conn, hub *hub.Hub) {
 		case <-ctx.Done():
 			return
 		case conn := <-jobs:
-			processConn(ctx, conn, hub)
+			hub.RegisterClient(ctx, conn)
 		}
 	}
-}
-
-func processConn(ctx context.Context, conn net.Conn, hub *hub.Hub) {
-	client := &internal.Client{
-		ID:       internal.GenerateClientID(),
-		Conn:     conn,
-		JoinTime: time.Now(),
-	}
-
-	hub.RegisterClient(ctx, client)
 }

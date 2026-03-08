@@ -3,10 +3,12 @@ package hub
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"frontdev333/tcp-chat/internal"
 	"frontdev333/tcp-chat/internal/chat"
 	"log/slog"
 	"net"
+	"time"
 )
 
 type Hub struct {
@@ -33,21 +35,14 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.clients[client] = true
 		case client := <-h.unregister:
-			h.delClient(client)
+			h.cleanupClient(client)
 		case request := <-h.requests:
 			request.execute(h.clients)
 		case msg := <-h.broadcast:
 			for _, c := range h.BroadcastMessage(msg) {
-				h.delClient(c)
+				h.cleanupClient(c)
 			}
 		}
-	}
-}
-
-func (h *Hub) delClient(client *internal.Client) {
-	if _, ok := h.clients[client]; ok {
-		delete(h.clients, client)
-		client.Conn.Close()
 	}
 }
 
@@ -68,7 +63,8 @@ func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
 	return failed
 }
 
-func (h *Hub) RegisterClient(ctx context.Context, client *internal.Client) {
+func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn) {
+	client := h.setupClientConnection(ctx, conn)
 	h.register <- client
 	slog.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
 	go h.handleClientMessages(ctx, client)
@@ -82,6 +78,7 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client)
 
 	scanner := bufio.NewScanner(client.Conn)
 	for {
+		client.Conn.SetDeadline(time.Now().Add(30 * time.Second))
 		if !scanner.Scan() {
 			err := scanner.Err()
 			if err == nil {
@@ -118,4 +115,25 @@ func (h *Hub) GetClientCount() int {
 	resChan := make(chan ClientsCountResult, 1)
 	h.requests <- &ClientsCountRequest{resChan}
 	return int(<-resChan)
+}
+
+func (h *Hub) setupClientConnection(ctx context.Context, conn net.Conn) *internal.Client {
+	client := &internal.Client{
+		ID:       internal.GenerateClientID(),
+		Conn:     conn,
+		JoinTime: time.Now(),
+	}
+
+	client.Conn.SetDeadline(time.Now().Add(time.Second * 30))
+
+	return client
+}
+
+func (h *Hub) cleanupClient(client *internal.Client) {
+	if _, ok := h.clients[client]; ok {
+		delete(h.clients, client)
+		client.Conn.Close()
+	}
+	msg := fmt.Sprintf("Client %s disconnected\n", client.ID)
+	h.broadcast <- chat.ParseIncomingMessage(msg, client.ID)
 }
