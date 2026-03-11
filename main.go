@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"frontdev333/tcp-chat/internal/chat"
 	"frontdev333/tcp-chat/internal/hub"
 	"frontdev333/tcp-chat/internal/server"
 	"log/slog"
@@ -15,10 +16,11 @@ func main() {
 	defer cancel()
 
 	hub := hub.NewHub()
+	history := chat.NewHistory()
 	go hub.Run()
 
 	go func() {
-		err := server.StartEchoServer(ctx, hub, ":8080")
+		err := server.StartEchoServer(ctx, hub, history, ":8080")
 		if err != nil {
 			slog.Error(err.Error())
 			return

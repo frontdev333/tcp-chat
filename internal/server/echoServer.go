@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"frontdev333/tcp-chat/internal/chat"
 	"frontdev333/tcp-chat/internal/hub"
 	"log/slog"
 	"net"
@@ -10,7 +11,7 @@ import (
 
 const workersNum = 100
 
-func StartEchoServer(ctx context.Context, hub *hub.Hub, port string) error {
+func StartEchoServer(ctx context.Context, hub *hub.Hub, history *chat.History, port string) error {
 	fmt.Println("server started")
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
@@ -22,7 +23,7 @@ func StartEchoServer(ctx context.Context, hub *hub.Hub, port string) error {
 	defer close(jobs)
 
 	for i := 0; i < workersNum; i++ {
-		go handleConn(ctx, jobs, hub)
+		go handleConn(ctx, jobs, hub, history)
 	}
 
 	for {
@@ -41,13 +42,13 @@ func StartEchoServer(ctx context.Context, hub *hub.Hub, port string) error {
 	}
 }
 
-func handleConn(ctx context.Context, jobs chan net.Conn, hub *hub.Hub) {
+func handleConn(ctx context.Context, jobs chan net.Conn, hub *hub.Hub, history *chat.History) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case conn := <-jobs:
-			hub.RegisterClient(ctx, conn)
+			hub.RegisterClient(ctx, conn, history)
 		}
 	}
 }

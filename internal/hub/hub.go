@@ -2,12 +2,15 @@ package hub
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"frontdev333/tcp-chat/internal"
 	"frontdev333/tcp-chat/internal/chat"
 	"log/slog"
 	"net"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -63,14 +66,15 @@ func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
 	return failed
 }
 
-func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn) {
+func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, history *chat.History) {
 	client := h.setupClientConnection(ctx, conn)
 	h.register <- client
 	slog.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
-	go h.handleClientMessages(ctx, client)
+	h.SendMessagesHistory(client, history)
+	go h.handleClientMessages(ctx, client, history)
 }
 
-func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client) {
+func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client, history *chat.History) {
 	defer func() {
 		h.unregister <- client
 		slog.Info("Client disconnected from server\n", "userID", client.ID, "Total", h.GetClientCount())
@@ -96,11 +100,17 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client)
 			slog.Error(err.Error())
 			return
 		}
-		rawText := scanner.Text()
-		msg := chat.ParseIncomingMessage(rawText, client.ID)
+		rawText := strings.TrimSpace(scanner.Text())
 
+		if strings.HasPrefix(rawText, "/") {
+			h.HandleCommand(client, strings.TrimSpace(rawText), history)
+			continue
+		}
+
+		msg := chat.ParseIncomingMessage(rawText, client.ID)
 		slog.Info("got client message", "userID", client.ID, "message", rawText)
 		h.broadcast <- msg
+		history.Add(&msg)
 	}
 }
 
@@ -136,4 +146,58 @@ func (h *Hub) cleanupClient(client *internal.Client) {
 	}
 	msg := fmt.Sprintf("Client %s disconnected\n", client.ID)
 	h.broadcast <- chat.ParseIncomingMessage(msg, client.ID)
+}
+
+func (h *Hub) SendUserList(client *internal.Client) {
+	var res bytes.Buffer
+	if _, err := fmt.Fprintf(&res, "Online users (%d):", h.GetClientCount()); err != nil {
+		slog.Error(err.Error())
+		return
+	}
+
+	usersString := strings.Join(h.GetActiveClients(), ", ") + "\n"
+	if _, err := client.Conn.Write([]byte(usersString)); err != nil {
+		slog.Error(err.Error())
+	}
+}
+
+func (h *Hub) SendMessagesHistory(client *internal.Client, history *chat.History) {
+	var res bytes.Buffer
+
+	for _, msg := range history.GetLastMessages() {
+		res.WriteString(chat.FormatMessage(*msg) + "\n")
+	}
+
+	if _, err := client.Conn.Write(res.Bytes()); err != nil {
+		slog.Error(err.Error())
+	}
+}
+
+func (h *Hub) HandleCommand(client *internal.Client, command string, history *chat.History) {
+	switch command {
+	case "/users":
+		h.SendUserList(client)
+	case "/history":
+		h.SendMessagesHistory(client, history)
+	case "/help":
+		h.HandleHelpCommand(client)
+	case "/quit":
+		os.Exit(1)
+	default:
+		if _, err := client.Conn.Write([]byte("unknown command\n")); err != nil {
+			slog.Error(err.Error())
+		}
+	}
+}
+
+func (h *Hub) HandleHelpCommand(client *internal.Client) {
+	helpMsg := `Available commands:
+  /help  - Show this help message
+  /users - List all online users
+  /history - Show recent chat history
+  /quit  - Leave the chat room
+`
+	if _, err := client.Conn.Write([]byte(helpMsg)); err != nil {
+		slog.Error(err.Error())
+	}
 }
