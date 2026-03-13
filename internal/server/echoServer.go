@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"frontdev333/tcp-chat/internal/chat"
 	"frontdev333/tcp-chat/internal/hub"
 	"log/slog"
@@ -11,8 +10,8 @@ import (
 
 const workersNum = 100
 
-func StartEchoServer(ctx context.Context, hub *hub.Hub, history *chat.History, port string) error {
-	fmt.Println("server started")
+func StartEchoServer(ctx context.Context, hub *hub.Hub, history *chat.History, logger *slog.Logger, port string) error {
+	logger.Info("server started")
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
 		return err

@@ -9,8 +9,8 @@ import (
 	"frontdev333/tcp-chat/internal/chat"
 	"log/slog"
 	"net"
-	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,15 +20,21 @@ type Hub struct {
 	register   chan *internal.Client
 	unregister chan *internal.Client
 	requests   chan Request
+	logger     *slog.Logger
+	stats      *internal.ServerStats
+	startTime  time.Time
 }
 
-func NewHub() *Hub {
+func NewHub(logger *slog.Logger, stats *internal.ServerStats, start time.Time) *Hub {
 	return &Hub{
 		clients:    make(map[*internal.Client]bool),
 		broadcast:  make(chan chat.ChatMessage),
 		register:   make(chan *internal.Client),
 		unregister: make(chan *internal.Client),
 		requests:   make(chan Request, 1),
+		logger:     logger,
+		stats:      stats,
+		startTime:  start,
 	}
 }
 
@@ -50,6 +56,7 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
+	atomic.AddInt64(&h.stats.TotalMessagesProcessed, 1)
 	var failed []*internal.Client
 
 	for client := range h.clients {
@@ -58,8 +65,9 @@ func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
 		}
 
 		if _, err := client.Conn.Write([]byte(chat.FormatMessage(msg))); err != nil {
-			slog.Error(err.Error())
+			h.logger.Error(err.Error())
 			failed = append(failed, client)
+			h.addErr2Stats()
 			continue
 		}
 	}
@@ -67,17 +75,25 @@ func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
 }
 
 func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, history *chat.History) {
-	client := h.setupClientConnection(ctx, conn)
+	client := h.setupClientConnection(conn)
 	h.register <- client
-	slog.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
+	atomic.AddInt64(&h.stats.ActiveConnections, 1)
+	h.logger.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
 	h.SendMessagesHistory(client, history)
 	go h.handleClientMessages(ctx, client, history)
 }
 
 func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client, history *chat.History) {
 	defer func() {
+		if r := recover(); r != nil {
+			h.handlePanic(r, client)
+		}
+
+		msg := fmt.Sprintf("Client %s disconnected\n", client.ID)
+		h.broadcast <- chat.ParseIncomingMessage(msg, client.ID)
+
 		h.unregister <- client
-		slog.Info("Client disconnected from server\n", "userID", client.ID, "Total", h.GetClientCount())
+		h.logger.Info("Client disconnected from server\n", "userID", client.ID, "Total", h.GetClientCount())
 	}()
 
 	scanner := bufio.NewScanner(client.Conn)
@@ -91,24 +107,30 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client,
 
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if ctx.Err() != nil {
-					slog.Error(ctx.Err().Error())
+					h.logger.Error(ctx.Err().Error())
+					h.addErr2Stats()
 					return
 				}
+				h.addErr2Stats()
 				continue
 			}
 
-			slog.Error(err.Error())
+			h.logger.Error(err.Error())
+			h.addErr2Stats()
 			return
 		}
 		rawText := strings.TrimSpace(scanner.Text())
 
 		if strings.HasPrefix(rawText, "/") {
-			h.HandleCommand(client, strings.TrimSpace(rawText), history)
+			shouldQuit := h.HandleCommand(client, strings.TrimSpace(rawText), history)
+			if shouldQuit {
+				return
+			}
 			continue
 		}
 
 		msg := chat.ParseIncomingMessage(rawText, client.ID)
-		slog.Info("got client message", "userID", client.ID, "message", rawText)
+		h.logger.Info("got client message", "userID", client.ID, "message", rawText)
 		h.broadcast <- msg
 		history.Add(&msg)
 	}
@@ -127,7 +149,7 @@ func (h *Hub) GetClientCount() int {
 	return int(<-resChan)
 }
 
-func (h *Hub) setupClientConnection(ctx context.Context, conn net.Conn) *internal.Client {
+func (h *Hub) setupClientConnection(conn net.Conn) *internal.Client {
 	client := &internal.Client{
 		ID:       internal.GenerateClientID(),
 		Conn:     conn,
@@ -144,20 +166,21 @@ func (h *Hub) cleanupClient(client *internal.Client) {
 		delete(h.clients, client)
 		client.Conn.Close()
 	}
-	msg := fmt.Sprintf("Client %s disconnected\n", client.ID)
-	h.broadcast <- chat.ParseIncomingMessage(msg, client.ID)
+	atomic.AddInt64(&h.stats.ActiveConnections, -1)
 }
 
 func (h *Hub) SendUserList(client *internal.Client) {
 	var res bytes.Buffer
 	if _, err := fmt.Fprintf(&res, "Online users (%d):", h.GetClientCount()); err != nil {
-		slog.Error(err.Error())
+		h.logger.Error(err.Error())
+		h.addErr2Stats()
 		return
 	}
 
 	usersString := strings.Join(h.GetActiveClients(), ", ") + "\n"
 	if _, err := client.Conn.Write([]byte(usersString)); err != nil {
-		slog.Error(err.Error())
+		h.logger.Error(err.Error())
+		h.addErr2Stats()
 	}
 }
 
@@ -169,11 +192,12 @@ func (h *Hub) SendMessagesHistory(client *internal.Client, history *chat.History
 	}
 
 	if _, err := client.Conn.Write(res.Bytes()); err != nil {
-		slog.Error(err.Error())
+		h.logger.Error(err.Error())
+		h.addErr2Stats()
 	}
 }
 
-func (h *Hub) HandleCommand(client *internal.Client, command string, history *chat.History) {
+func (h *Hub) HandleCommand(client *internal.Client, command string, history *chat.History) bool {
 	switch command {
 	case "/users":
 		h.SendUserList(client)
@@ -182,12 +206,14 @@ func (h *Hub) HandleCommand(client *internal.Client, command string, history *ch
 	case "/help":
 		h.HandleHelpCommand(client)
 	case "/quit":
-		os.Exit(1)
+		return true
 	default:
 		if _, err := client.Conn.Write([]byte("unknown command\n")); err != nil {
-			slog.Error(err.Error())
+			h.logger.Error(err.Error())
+			h.addErr2Stats()
 		}
 	}
+	return false
 }
 
 func (h *Hub) HandleHelpCommand(client *internal.Client) {
@@ -198,6 +224,29 @@ func (h *Hub) HandleHelpCommand(client *internal.Client) {
   /quit  - Leave the chat room
 `
 	if _, err := client.Conn.Write([]byte(helpMsg)); err != nil {
-		slog.Error(err.Error())
+		h.logger.Error(err.Error())
+		h.addErr2Stats()
 	}
+}
+
+func (h *Hub) handlePanic(r any, client *internal.Client) {
+	h.logger.Error("handled panic", "error", r, "client_id", client.ID)
+	h.addErr2Stats()
+}
+
+func (h *Hub) addErr2Stats() {
+	atomic.AddInt64(&h.stats.ErrorCount, 1)
+	h.stats.LastError.Store(time.Now().Format("2006/01/02 15:04:05"))
+}
+
+func (h *Hub) getStats() {
+
+	uptime := time.Since(h.startTime).Seconds()
+	h.logger.Info(
+		"Server stats:",
+		"Connections", atomic.LoadInt64(&h.stats.ActiveConnections),
+		"Messages", atomic.LoadInt64(&h.stats.TotalMessagesProcessed),
+		"Errors", atomic.LoadInt64(&h.stats.ErrorCount),
+		"Uptime", uptime,
+	)
 }
