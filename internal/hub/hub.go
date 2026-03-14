@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Hub struct {
@@ -80,7 +82,7 @@ func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, history *chat.H
 	atomic.AddInt64(&h.stats.ActiveConnections, 1)
 	h.logger.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
 	h.SendMessagesHistory(client, history)
-	go h.handleClientMessages(ctx, client, history)
+	h.handleClientMessages(ctx, client, history)
 }
 
 func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client, history *chat.History) {
@@ -112,7 +114,8 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client,
 					return
 				}
 				h.addErr2Stats()
-				continue
+				h.logger.Info("timeout disconnect", "client_id", client.ID)
+				return
 			}
 
 			h.logger.Error(err.Error())
@@ -136,9 +139,9 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client,
 	}
 }
 
-func (h *Hub) GetActiveClients() []string {
-	resChan := make(chan ActiveClientsResult, 1)
-	h.requests <- &ActiveClientsRequest{resChan}
+func (h *Hub) GetActiveClientsIDs() []string {
+	resChan := make(chan ActiveClientsIDsResult, 1)
+	h.requests <- &ActiveClientsIDsRequest{resChan}
 
 	return <-resChan
 }
@@ -177,7 +180,7 @@ func (h *Hub) SendUserList(client *internal.Client) {
 		return
 	}
 
-	usersString := strings.Join(h.GetActiveClients(), ", ") + "\n"
+	usersString := strings.Join(h.GetActiveClientsIDs(), ", ") + "\n"
 	if _, err := client.Conn.Write([]byte(usersString)); err != nil {
 		h.logger.Error(err.Error())
 		h.addErr2Stats()
@@ -249,4 +252,52 @@ func (h *Hub) getStats() {
 		"Errors", atomic.LoadInt64(&h.stats.ErrorCount),
 		"Uptime", uptime,
 	)
+}
+
+func (h *Hub) getActiveClients() []*internal.Client {
+	response := make(chan ActiveClientsResult)
+	h.requests <- &ActiveClientsRequest{response}
+	return <-response
+}
+
+func (h *Hub) notifyShutdown(msgText string) {
+	h.broadcast <- chat.ChatMessage{
+		ClientID:    uuid.NewString(),
+		ClientType:  "system",
+		Content:     msgText,
+		MessageID:   uuid.NewString(),
+		MessageType: "notification",
+		Timestamp:   time.Now(),
+	}
+}
+
+func (h *Hub) Shutdown(ctx context.Context) error {
+	tickerTimer := time.NewTicker(time.Second)
+	secondsLeft := 30
+
+	clients := h.getActiveClients()
+	h.notifyShutdown("Server is shutting down in 30 seconds.")
+
+	for {
+		select {
+		case <-tickerTimer.C:
+			secondsLeft--
+			switch secondsLeft {
+			case 20:
+				h.notifyShutdown("20 seconds left")
+			case 10:
+				h.notifyShutdown("10 seconds left until shutdown")
+			case 5:
+				h.notifyShutdown("Server is shutting down in 5 seconds. Goodbye!")
+			}
+		case <-ctx.Done():
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
+			for _, c := range clients {
+				c.Conn.Close()
+			}
+		}
+	}
 }

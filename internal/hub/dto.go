@@ -6,11 +6,11 @@ type Request interface {
 	execute(map[*internal.Client]bool)
 }
 
-type ActiveClientsResult []string
-
-type ActiveClientsRequest struct {
-	Response chan ActiveClientsResult
+type ActiveClientsIDsRequest struct {
+	Response chan ActiveClientsIDsResult
 }
+
+type ActiveClientsIDsResult []string
 
 type ClientsCountRequest struct {
 	Response chan ClientsCountResult
@@ -18,7 +18,13 @@ type ClientsCountRequest struct {
 
 type ClientsCountResult int
 
-func (r *ActiveClientsRequest) execute(clients map[*internal.Client]bool) {
+type ActiveClientsRequest struct {
+	Response chan ActiveClientsResult
+}
+
+type ActiveClientsResult []*internal.Client
+
+func (r *ActiveClientsIDsRequest) execute(clients map[*internal.Client]bool) {
 	res := make([]string, 0, len(clients))
 
 	for c := range clients {
@@ -30,4 +36,16 @@ func (r *ActiveClientsRequest) execute(clients map[*internal.Client]bool) {
 
 func (r *ClientsCountRequest) execute(clients map[*internal.Client]bool) {
 	r.Response <- ClientsCountResult(len(clients))
+}
+
+func (a *ActiveClientsRequest) execute(clients map[*internal.Client]bool) {
+	res := make([]*internal.Client, len(clients))
+
+	i := 0
+	for c, _ := range clients {
+		res[i] = c
+		i++
+	}
+
+	a.Response <- res
 }

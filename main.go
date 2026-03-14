@@ -26,12 +26,20 @@ func main() {
 	go func() {
 		err := server.StartEchoServer(ctx, hub, history, logger, ":8080")
 		if err != nil {
-			slog.Error(err.Error())
+			logger.Error(err.Error())
 			return
 		}
 	}()
 
 	<-ctx.Done()
-	slog.Warn("shutdown started")
+	logger.Warn("shutdown signal received!")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	if err := hub.Shutdown(shutdownCtx); err != nil {
+		slog.Error(err.Error())
+	}
+
+	logger.Info("server successfully stopped")
 
 }
