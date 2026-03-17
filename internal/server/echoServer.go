@@ -2,15 +2,21 @@ package server
 
 import (
 	"context"
+	"frontdev333/tcp-chat/internal"
 	"frontdev333/tcp-chat/internal/chat"
 	"frontdev333/tcp-chat/internal/hub"
 	"log/slog"
 	"net"
 )
 
-const workersNum = 100
-
-func StartEchoServer(ctx context.Context, hub *hub.Hub, history *chat.History, logger *slog.Logger, port string) error {
+func StartEchoServer(
+	ctx context.Context,
+	hub *hub.Hub,
+	history *chat.History,
+	logger *slog.Logger,
+	config *internal.ServerConfig,
+	port string,
+) error {
 	logger.Info("server started")
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
@@ -18,10 +24,10 @@ func StartEchoServer(ctx context.Context, hub *hub.Hub, history *chat.History, l
 	}
 	defer listener.Close()
 
-	jobs := make(chan net.Conn, workersNum)
+	jobs := make(chan net.Conn, config.MaxConnections)
 	defer close(jobs)
 
-	for i := 0; i < workersNum; i++ {
+	for i := 0; i < config.MaxConnections; i++ {
 		go handleConn(ctx, jobs, hub, history)
 	}
 

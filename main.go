@@ -17,14 +17,23 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT)
 	defer cancel()
 
-	logger := slog.New(internal.NewHandler(os.Stdout, "TCP-CHAT", slog.LevelInfo))
+	config, err := internal.ParseCommandLineArgs()
+	if err != nil {
+		slog.Error(err.Error())
+		return
+	}
+
+	logger := slog.New(internal.NewHandler(os.Stdout, "TCP-CHAT", config.LogLevel))
 	stats := &internal.ServerStats{}
 	hub := hub.NewHub(logger, stats, time.Now())
-	history := chat.NewHistory()
+	history := chat.NewHistory(config.MessageHistorySize)
+
+	internal.PrintStartupBanner(config)
+
 	go hub.Run()
 
 	go func() {
-		err := server.StartEchoServer(ctx, hub, history, logger, ":8080")
+		err := server.StartEchoServer(ctx, hub, history, logger, &config, ":"+config.Port)
 		if err != nil {
 			logger.Error(err.Error())
 			return
@@ -32,7 +41,7 @@ func main() {
 	}()
 
 	<-ctx.Done()
-	logger.Warn("shutdown signal received!")
+	logger.Warn("shutdown signal received")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 

@@ -9,9 +9,9 @@ type History struct {
 	mtx          sync.Mutex
 }
 
-func NewHistory() *History {
+func NewHistory(size int) *History {
 	return &History{
-		lastMessages: make([]*ChatMessage, 64),
+		lastMessages: make([]*ChatMessage, size),
 		head:         0,
 		tail:         0,
 	}
