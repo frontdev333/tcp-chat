@@ -24,12 +24,17 @@ func main() {
 	}
 
 	logger := slog.New(internal.NewHandler(os.Stdout, "TCP-CHAT", config.LogLevel))
-	stats := &internal.ServerStats{}
-	hub := hub.NewHub(logger, stats, time.Now())
+	hub := hub.NewHub(logger, time.Now())
 	history := chat.NewHistory(config.MessageHistorySize)
 
 	internal.PrintStartupBanner(config)
 
+	go func() {
+		if err = server.StartHTTPMonitoring(hub, "8081"); err != nil {
+			logger.Error(err.Error())
+			os.Exit(1)
+		}
+	}()
 	go hub.Run()
 
 	go func() {

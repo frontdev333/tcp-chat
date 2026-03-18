@@ -17,17 +17,20 @@ import (
 )
 
 type Hub struct {
-	clients    map[*internal.Client]bool
-	broadcast  chan chat.ChatMessage
-	register   chan *internal.Client
-	unregister chan *internal.Client
-	requests   chan Request
-	logger     *slog.Logger
-	stats      *internal.ServerStats
-	startTime  time.Time
+	clients                map[*internal.Client]bool
+	broadcast              chan chat.ChatMessage
+	register               chan *internal.Client
+	unregister             chan *internal.Client
+	requests               chan Request
+	logger                 *slog.Logger
+	totalMessagesProcessed atomic.Int64
+	activeConnections      atomic.Int64
+	errorCount             atomic.Int64
+	lastError              atomic.Pointer[string]
+	startTime              time.Time
 }
 
-func NewHub(logger *slog.Logger, stats *internal.ServerStats, start time.Time) *Hub {
+func NewHub(logger *slog.Logger, start time.Time) *Hub {
 	return &Hub{
 		clients:    make(map[*internal.Client]bool),
 		broadcast:  make(chan chat.ChatMessage),
@@ -35,7 +38,6 @@ func NewHub(logger *slog.Logger, stats *internal.ServerStats, start time.Time) *
 		unregister: make(chan *internal.Client),
 		requests:   make(chan Request, 1),
 		logger:     logger,
-		stats:      stats,
 		startTime:  start,
 	}
 }
@@ -58,7 +60,7 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
-	atomic.AddInt64(&h.stats.TotalMessagesProcessed, 1)
+	h.totalMessagesProcessed.Add(1)
 	var failed []*internal.Client
 
 	for client := range h.clients {
@@ -79,7 +81,7 @@ func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
 func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, history *chat.History) {
 	client := h.setupClientConnection(conn)
 	h.register <- client
-	atomic.AddInt64(&h.stats.ActiveConnections, 1)
+	h.activeConnections.Add(1)
 	h.logger.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
 	h.SendMessagesHistory(client, history)
 	h.handleClientMessages(ctx, client, history)
@@ -169,7 +171,7 @@ func (h *Hub) cleanupClient(client *internal.Client) {
 		delete(h.clients, client)
 		client.Conn.Close()
 	}
-	atomic.AddInt64(&h.stats.ActiveConnections, -1)
+	h.activeConnections.Add(-1)
 }
 
 func (h *Hub) SendUserList(client *internal.Client) {
@@ -238,20 +240,35 @@ func (h *Hub) handlePanic(r any, client *internal.Client) {
 }
 
 func (h *Hub) addErr2Stats() {
-	atomic.AddInt64(&h.stats.ErrorCount, 1)
-	h.stats.LastError.Store(time.Now().Format("2006/01/02 15:04:05"))
+	h.errorCount.Add(1)
+	errTime := time.Now().Format("2006/01/02 15:04:05")
+	h.lastError.Store(&errTime)
 }
 
-func (h *Hub) getStats() {
+func (h *Hub) GetStats() ServerStats {
 
 	uptime := time.Since(h.startTime).Seconds()
-	h.logger.Info(
-		"Server stats:",
-		"Connections", atomic.LoadInt64(&h.stats.ActiveConnections),
-		"Messages", atomic.LoadInt64(&h.stats.TotalMessagesProcessed),
-		"Errors", atomic.LoadInt64(&h.stats.ErrorCount),
-		"Uptime", uptime,
-	)
+	var lstErr string
+	if p := h.lastError.Load(); p != nil {
+		lstErr = *p
+	}
+
+	ttlMsgs := h.totalMessagesProcessed.Load()
+	var msgRPMin float64
+
+	if uptime > 0 {
+		msgRPMin = float64(ttlMsgs) / uptime * 60
+	}
+
+	return ServerStats{
+		ActiveConnections:      h.activeConnections.Load(),
+		TotalMessagesProcessed: ttlMsgs,
+		UptimeSeconds:          uptime,
+		ErrorCount:             h.errorCount.Load(),
+		LastError:              lstErr,
+		ServerStartTime:        h.startTime.String(),
+		MessageRatePerMinute:   msgRPMin,
+	}
 }
 
 func (h *Hub) getActiveClients() []*internal.Client {
