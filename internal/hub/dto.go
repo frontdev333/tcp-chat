@@ -26,6 +26,22 @@ type ActiveClientsRequest struct {
 
 type ActiveClientsResult []*internal.Client
 
+type HealthCheck struct {
+	Status            string  `json:"status"`
+	ActiveConnections int64   `json:"active_connections"`
+	UptimeSeconds     float64 `json:"uptime_seconds"`
+}
+
+type ServerStats struct {
+	ActiveConnections      int64   `json:"active_connections"`
+	TotalMessagesProcessed int64   `json:"total_messages_processed"`
+	UptimeSeconds          float64 `json:"uptime_seconds"`
+	ErrorCount             int64   `json:"error_count"`
+	LastError              string  `json:"last_error"`
+	ServerStartTime        string  `json:"server_start_time"`
+	MessageRatePerMinute   float64 `json:"message_rate_per_minute"`
+}
+
 func (r *ActiveClientsIDsRequest) execute(clients map[*internal.Client]bool) {
 	res := make([]string, 0, len(clients))
 
@@ -50,20 +66,4 @@ func (a *ActiveClientsRequest) execute(clients map[*internal.Client]bool) {
 	}
 
 	a.Response <- res
-}
-
-type ServerStats struct {
-	ActiveConnections      int64   `json:"active_connections"`
-	TotalMessagesProcessed int64   `json:"total_messages_processed"`
-	UptimeSeconds          float64 `json:"uptime_seconds"`
-	ErrorCount             int64   `json:"error_count"`
-	LastError              string  `json:"last_error"`
-	ServerStartTime        string  `json:"server_start_time"`
-	MessageRatePerMinute   float64 `json:"message_rate_per_minute"`
-}
-
-type HealthCheck struct {
-	Status            string  `json:"status"`
-	ActiveConnections int64   `json:"active_connections"`
-	UptimeSeconds     float64 `json:"uptime_seconds"`
 }

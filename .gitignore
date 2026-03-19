@@ -1,1 +1,22 @@
-.idea
+# Бинарные файлы
+chat-server
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Тестовые и временные файлы
+*.test
+*.tmp
+results.json
+test_results.json
+/logs/
+
+# Файлы IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Модули Go
+vendor/
