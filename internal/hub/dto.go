@@ -1,11 +1,11 @@
 package hub
 
 import (
-	"frontdev333/tcp-chat/internal"
+	"frontdev333/tcp-chat/internal/domain"
 )
 
 type Request interface {
-	execute(map[*internal.Client]bool)
+	execute(map[*domain.Client]bool)
 }
 
 type ActiveClientsIDsRequest struct {
@@ -24,7 +24,7 @@ type ActiveClientsRequest struct {
 	Response chan ActiveClientsResult
 }
 
-type ActiveClientsResult []*internal.Client
+type ActiveClientsResult []*domain.Client
 
 type HealthCheck struct {
 	Status            string  `json:"status"`
@@ -42,7 +42,7 @@ type ServerStats struct {
 	MessageRatePerMinute   float64 `json:"message_rate_per_minute"`
 }
 
-func (r *ActiveClientsIDsRequest) execute(clients map[*internal.Client]bool) {
+func (r *ActiveClientsIDsRequest) execute(clients map[*domain.Client]bool) {
 	res := make([]string, 0, len(clients))
 
 	for c := range clients {
@@ -52,12 +52,12 @@ func (r *ActiveClientsIDsRequest) execute(clients map[*internal.Client]bool) {
 	r.Response <- res
 }
 
-func (r *ClientsCountRequest) execute(clients map[*internal.Client]bool) {
+func (r *ClientsCountRequest) execute(clients map[*domain.Client]bool) {
 	r.Response <- ClientsCountResult(len(clients))
 }
 
-func (a *ActiveClientsRequest) execute(clients map[*internal.Client]bool) {
-	res := make([]*internal.Client, len(clients))
+func (a *ActiveClientsRequest) execute(clients map[*domain.Client]bool) {
+	res := make([]*domain.Client, len(clients))
 
 	i := 0
 	for c, _ := range clients {

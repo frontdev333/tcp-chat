@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"frontdev333/tcp-chat/internal"
 	"frontdev333/tcp-chat/internal/chat"
+	"frontdev333/tcp-chat/internal/domain"
 	"log/slog"
 	"net"
 	"strings"
@@ -17,10 +17,10 @@ import (
 )
 
 type Hub struct {
-	clients                map[*internal.Client]bool
-	broadcast              chan chat.ChatMessage
-	register               chan *internal.Client
-	unregister             chan *internal.Client
+	clients                map[*domain.Client]bool
+	broadcast              chan domain.ChatMessage
+	register               chan *domain.Client
+	unregister             chan *domain.Client
 	requests               chan Request
 	logger                 *slog.Logger
 	totalMessagesProcessed atomic.Int64
@@ -32,10 +32,10 @@ type Hub struct {
 
 func NewHub(logger *slog.Logger, start time.Time) *Hub {
 	return &Hub{
-		clients:    make(map[*internal.Client]bool),
-		broadcast:  make(chan chat.ChatMessage),
-		register:   make(chan *internal.Client),
-		unregister: make(chan *internal.Client),
+		clients:    make(map[*domain.Client]bool),
+		broadcast:  make(chan domain.ChatMessage),
+		register:   make(chan *domain.Client),
+		unregister: make(chan *domain.Client),
 		requests:   make(chan Request, 1),
 		logger:     logger,
 		startTime:  start,
@@ -57,7 +57,7 @@ func (h *Hub) Run() {
 	}
 }
 
-func (h *Hub) BroadcastMessage(msg chat.ChatMessage) {
+func (h *Hub) BroadcastMessage(msg domain.ChatMessage) {
 	h.totalMessagesProcessed.Add(1)
 
 	for client := range h.clients {
@@ -84,9 +84,9 @@ func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, history *chat.H
 	h.handleClientMessages(ctx, client, history)
 }
 
-func (h *Hub) clientWriter(client *internal.Client) {
+func (h *Hub) clientWriter(client *domain.Client) {
 	for msg := range client.WriteCh {
-		if _, err := client.Conn.Write([]byte(chat.FormatMessage(msg))); err != nil {
+		if _, err := client.Conn.Write([]byte(domain.FormatMessage(msg))); err != nil {
 			h.unregister <- client
 			h.logger.Error(err.Error())
 			h.addErr2Stats()
@@ -95,14 +95,14 @@ func (h *Hub) clientWriter(client *internal.Client) {
 	}
 }
 
-func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client, history *chat.History) {
+func (h *Hub) handleClientMessages(ctx context.Context, client *domain.Client, history *chat.History) {
 	defer func() {
 		if r := recover(); r != nil {
 			h.handlePanic(r, client)
 		}
 
 		msg := fmt.Sprintf("Client %s disconnected\n", client.ID)
-		h.broadcast <- chat.ParseIncomingMessage(msg, client.ID)
+		h.broadcast <- domain.ParseIncomingMessage(msg, client.ID)
 
 		h.unregister <- client
 		h.logger.Info("Client disconnected from server\n", "userID", client.ID, "Total", h.GetClientCount())
@@ -142,7 +142,7 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client,
 			continue
 		}
 
-		msg := chat.ParseIncomingMessage(rawText, client.ID)
+		msg := domain.ParseIncomingMessage(rawText, client.ID)
 		h.logger.Info("got client message", "userID", client.ID, "message", rawText)
 		h.broadcast <- msg
 		history.Add(&msg)
@@ -162,12 +162,12 @@ func (h *Hub) GetClientCount() int {
 	return int(<-resChan)
 }
 
-func (h *Hub) setupClientConnection(conn net.Conn) *internal.Client {
-	client := &internal.Client{
-		ID:       internal.GenerateClientID(),
+func (h *Hub) setupClientConnection(conn net.Conn) *domain.Client {
+	client := &domain.Client{
+		ID:       domain.GenerateClientID(),
 		Conn:     conn,
 		JoinTime: time.Now(),
-		WriteCh:  make(chan chat.ChatMessage, 100),
+		WriteCh:  make(chan domain.ChatMessage, 100),
 	}
 
 	client.Conn.SetDeadline(time.Now().Add(time.Second * 30))
@@ -175,7 +175,7 @@ func (h *Hub) setupClientConnection(conn net.Conn) *internal.Client {
 	return client
 }
 
-func (h *Hub) cleanupClient(client *internal.Client) {
+func (h *Hub) cleanupClient(client *domain.Client) {
 	if _, ok := h.clients[client]; ok {
 		delete(h.clients, client)
 		client.Conn.Close()
@@ -184,7 +184,7 @@ func (h *Hub) cleanupClient(client *internal.Client) {
 	}
 }
 
-func (h *Hub) SendUserList(client *internal.Client) {
+func (h *Hub) SendUserList(client *domain.Client) {
 	var res bytes.Buffer
 	if _, err := fmt.Fprintf(&res, "Online users (%d):", h.GetClientCount()); err != nil {
 		h.logger.Error(err.Error())
@@ -199,11 +199,11 @@ func (h *Hub) SendUserList(client *internal.Client) {
 	}
 }
 
-func (h *Hub) SendMessagesHistory(client *internal.Client, history *chat.History) {
+func (h *Hub) SendMessagesHistory(client *domain.Client, history *chat.History) {
 	var res bytes.Buffer
 
 	for _, msg := range history.GetLastMessages() {
-		res.WriteString(chat.FormatMessage(*msg) + "\n")
+		res.WriteString(domain.FormatMessage(*msg) + "\n")
 	}
 
 	if _, err := client.Conn.Write(res.Bytes()); err != nil {
@@ -212,7 +212,7 @@ func (h *Hub) SendMessagesHistory(client *internal.Client, history *chat.History
 	}
 }
 
-func (h *Hub) HandleCommand(client *internal.Client, command string, history *chat.History) bool {
+func (h *Hub) HandleCommand(client *domain.Client, command string, history *chat.History) bool {
 	switch command {
 	case "/users":
 		h.SendUserList(client)
@@ -231,7 +231,7 @@ func (h *Hub) HandleCommand(client *internal.Client, command string, history *ch
 	return false
 }
 
-func (h *Hub) HandleHelpCommand(client *internal.Client) {
+func (h *Hub) HandleHelpCommand(client *domain.Client) {
 	helpMsg := `Available commands:
   /help  - Show this help message
   /users - List all online users
@@ -244,7 +244,7 @@ func (h *Hub) HandleHelpCommand(client *internal.Client) {
 	}
 }
 
-func (h *Hub) handlePanic(r any, client *internal.Client) {
+func (h *Hub) handlePanic(r any, client *domain.Client) {
 	h.logger.Error("handled panic", "error", r, "client_id", client.ID)
 	h.addErr2Stats()
 }
@@ -281,14 +281,14 @@ func (h *Hub) GetStats() ServerStats {
 	}
 }
 
-func (h *Hub) getActiveClients() []*internal.Client {
+func (h *Hub) getActiveClients() []*domain.Client {
 	response := make(chan ActiveClientsResult)
 	h.requests <- &ActiveClientsRequest{response}
 	return <-response
 }
 
 func (h *Hub) notifyShutdown(msgText string) {
-	h.broadcast <- chat.ChatMessage{
+	h.broadcast <- domain.ChatMessage{
 		ClientID:    uuid.NewString(),
 		ClientType:  "system",
 		Content:     msgText,

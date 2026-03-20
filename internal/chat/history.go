@@ -1,9 +1,12 @@
 package chat
 
-import "sync"
+import (
+	"frontdev333/tcp-chat/internal/domain"
+	"sync"
+)
 
 type History struct {
-	lastMessages []*ChatMessage
+	lastMessages []*domain.ChatMessage
 	head         uint
 	tail         uint
 	mtx          sync.Mutex
@@ -11,13 +14,13 @@ type History struct {
 
 func NewHistory(size int) *History {
 	return &History{
-		lastMessages: make([]*ChatMessage, size),
+		lastMessages: make([]*domain.ChatMessage, size),
 		head:         0,
 		tail:         0,
 	}
 }
 
-func (h *History) Add(msg *ChatMessage) {
+func (h *History) Add(msg *domain.ChatMessage) {
 	capacity := uint(len(h.lastMessages))
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
@@ -26,7 +29,7 @@ func (h *History) Add(msg *ChatMessage) {
 	h.lastMessages[index] = msg
 }
 
-func (h *History) Read() *ChatMessage {
+func (h *History) Read() *domain.ChatMessage {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 	capacity := uint(len(h.lastMessages))
@@ -36,7 +39,7 @@ func (h *History) Read() *ChatMessage {
 	return res
 }
 
-func (h *History) GetLastMessages() []*ChatMessage {
+func (h *History) GetLastMessages() []*domain.ChatMessage {
 	h.mtx.Lock()
 	defer h.mtx.Unlock()
 	capacity := uint(len(h.lastMessages))
@@ -47,7 +50,7 @@ func (h *History) GetLastMessages() []*ChatMessage {
 	}
 
 	count := h.head - start
-	res := make([]*ChatMessage, 0, count)
+	res := make([]*domain.ChatMessage, 0, count)
 
 	for i := start; i < h.head; i++ {
 		index := i & (capacity - 1)
