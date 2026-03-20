@@ -52,39 +52,47 @@ func (h *Hub) Run() {
 		case request := <-h.requests:
 			request.execute(h.clients)
 		case msg := <-h.broadcast:
-			for _, c := range h.BroadcastMessage(msg) {
-				h.cleanupClient(c)
-			}
+			h.BroadcastMessage(msg)
 		}
 	}
 }
 
-func (h *Hub) BroadcastMessage(msg chat.ChatMessage) []*internal.Client {
+func (h *Hub) BroadcastMessage(msg chat.ChatMessage) {
 	h.totalMessagesProcessed.Add(1)
-	var failed []*internal.Client
 
 	for client := range h.clients {
 		if client.ID == msg.PureClientID() {
 			continue
 		}
-
-		if _, err := client.Conn.Write([]byte(chat.FormatMessage(msg))); err != nil {
-			h.logger.Error(err.Error())
-			failed = append(failed, client)
-			h.addErr2Stats()
-			continue
+		select {
+		case client.WriteCh <- msg:
+		default:
+			go func() {
+				h.unregister <- client
+			}()
 		}
 	}
-	return failed
 }
 
 func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, history *chat.History) {
 	client := h.setupClientConnection(conn)
+	go h.clientWriter(client)
 	h.register <- client
 	h.activeConnections.Add(1)
 	h.logger.Info("Client connected to server\n", "UserID", client.ID, "Total", h.GetClientCount())
 	h.SendMessagesHistory(client, history)
 	h.handleClientMessages(ctx, client, history)
+}
+
+func (h *Hub) clientWriter(client *internal.Client) {
+	for msg := range client.WriteCh {
+		if _, err := client.Conn.Write([]byte(chat.FormatMessage(msg))); err != nil {
+			h.unregister <- client
+			h.logger.Error(err.Error())
+			h.addErr2Stats()
+			return
+		}
+	}
 }
 
 func (h *Hub) handleClientMessages(ctx context.Context, client *internal.Client, history *chat.History) {
@@ -159,6 +167,7 @@ func (h *Hub) setupClientConnection(conn net.Conn) *internal.Client {
 		ID:       internal.GenerateClientID(),
 		Conn:     conn,
 		JoinTime: time.Now(),
+		WriteCh:  make(chan chat.ChatMessage, 100),
 	}
 
 	client.Conn.SetDeadline(time.Now().Add(time.Second * 30))
@@ -170,8 +179,9 @@ func (h *Hub) cleanupClient(client *internal.Client) {
 	if _, ok := h.clients[client]; ok {
 		delete(h.clients, client)
 		client.Conn.Close()
+		close(client.WriteCh)
+		h.activeConnections.Add(-1)
 	}
-	h.activeConnections.Add(-1)
 }
 
 func (h *Hub) SendUserList(client *internal.Client) {

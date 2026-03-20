@@ -1,17 +1,18 @@
 package internal
 
 import (
+	"frontdev333/tcp-chat/internal/chat"
+	"github.com/google/uuid"
 	"net"
 	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Client struct {
 	ID       string    `json:"id"`
 	Conn     net.Conn  `json:"conn"`
 	JoinTime time.Time `json:"join_time"`
+	WriteCh  chan chat.ChatMessage
 }
 
 func GenerateClientID() string {
