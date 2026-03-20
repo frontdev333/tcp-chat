@@ -38,7 +38,7 @@ func main() {
 	go hub.Run()
 
 	go func() {
-		err := server.StartEchoServer(ctx, hub, history, logger, &config, ":"+config.Port)
+		err := server.StartEchoServer(ctx, hub, history, logger, ":"+config.Port)
 		if err != nil {
 			logger.Error(err.Error())
 			return

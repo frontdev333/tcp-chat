@@ -8,14 +8,12 @@ import (
 
 type ServerConfig struct {
 	Port               string
-	MaxConnections     int
 	LogLevel           slog.Level
 	MessageHistorySize int
 }
 
 func ParseCommandLineArgs() (ServerConfig, error) {
 	portCmd := flag.String("port", "8080", "port")
-	maxConnCmd := flag.Int("max-connections", 100, "maximum connections")
 	logLvlCmd := flag.String("log-level", "INFO", "logging level")
 	msgHistoryCmd := flag.Int("history-size", 64, "messages history size, power of two")
 
@@ -23,7 +21,6 @@ func ParseCommandLineArgs() (ServerConfig, error) {
 
 	if err := validateSrvrCfgData(
 		*portCmd,
-		*maxConnCmd,
 		*logLvlCmd,
 		*msgHistoryCmd,
 	); err != nil {
@@ -41,7 +38,6 @@ func ParseCommandLineArgs() (ServerConfig, error) {
 
 	return ServerConfig{
 		Port:               *portCmd,
-		MaxConnections:     *maxConnCmd,
 		LogLevel:           level,
 		MessageHistorySize: *msgHistoryCmd,
 	}, nil
@@ -49,17 +45,12 @@ func ParseCommandLineArgs() (ServerConfig, error) {
 
 func validateSrvrCfgData(
 	port string,
-	maxConn int,
 	level string,
 	historySize int,
 ) error {
 
 	if port == "" {
 		return errors.New("port value can not be empty")
-	}
-
-	if maxConn <= 0 {
-		return errors.New("maximum connections number must be greater than zero")
 	}
 
 	if level == "" {

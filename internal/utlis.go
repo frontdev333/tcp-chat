@@ -26,7 +26,6 @@ func PrintStartupBanner(config ServerConfig) {
 	}
 
 	fmt.Fprintf(tb, "TCP Server Port:\t%s\n", config.Port)
-	fmt.Fprintf(tb, "Max Connections:\t%d\n", config.MaxConnections)
 	fmt.Fprintf(tb, "Log Level:\t%s\n", level)
 	tb.Flush()
 

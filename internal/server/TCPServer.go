@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"frontdev333/tcp-chat/internal"
+	"errors"
 	"frontdev333/tcp-chat/internal/chat"
 	"frontdev333/tcp-chat/internal/hub"
 	"log/slog"
@@ -14,7 +14,6 @@ func StartEchoServer(
 	hub *hub.Hub,
 	history *chat.History,
 	logger *slog.Logger,
-	config *internal.ServerConfig,
 	port string,
 ) error {
 	logger.Info("server started")
@@ -24,16 +23,17 @@ func StartEchoServer(
 	}
 	defer listener.Close()
 
-	jobs := make(chan net.Conn, config.MaxConnections)
-	defer close(jobs)
-
-	for i := 0; i < config.MaxConnections; i++ {
-		go handleConn(ctx, jobs, hub, history)
-	}
+	go func() {
+		<-ctx.Done()
+		listener.Close()
+	}()
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return err
+			}
 			slog.Error(err.Error())
 			continue
 		}
@@ -42,18 +42,7 @@ func StartEchoServer(
 			conn.Close()
 			return ctx.Err()
 		default:
-			jobs <- conn
-		}
-	}
-}
-
-func handleConn(ctx context.Context, jobs chan net.Conn, hub *hub.Hub, history *chat.History) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case conn := <-jobs:
-			hub.RegisterClient(ctx, conn, history)
+			go hub.RegisterClient(ctx, conn, history)
 		}
 	}
 }
