@@ -192,23 +192,14 @@ func (h *Hub) SendUserList(client *domain.Client) {
 		return
 	}
 
-	usersString := strings.Join(h.GetActiveClientsIDs(), ", ") + "\n"
-	if _, err := client.Conn.Write([]byte(usersString)); err != nil {
-		h.logger.Error(err.Error())
-		h.addErr2Stats()
-	}
+	usersString := strings.Join(h.GetActiveClientsIDs(), ", ")
+	res.WriteString(usersString)
+	h.SendMessage(client, res.String())
 }
 
 func (h *Hub) SendMessagesHistory(client *domain.Client, history *chat.History) {
-	var res bytes.Buffer
-
 	for _, msg := range history.GetLastMessages() {
-		res.WriteString(domain.FormatMessage(*msg) + "\n")
-	}
-
-	if _, err := client.Conn.Write(res.Bytes()); err != nil {
-		h.logger.Error(err.Error())
-		h.addErr2Stats()
+		client.WriteCh <- *msg
 	}
 }
 
@@ -220,15 +211,19 @@ func (h *Hub) HandleCommand(client *domain.Client, command string, history *chat
 		h.SendMessagesHistory(client, history)
 	case "/help":
 		h.HandleHelpCommand(client)
+	case "/time":
+		h.HandleTimeCommand(client)
 	case "/quit":
 		return true
 	default:
-		if _, err := client.Conn.Write([]byte("unknown command\n")); err != nil {
-			h.logger.Error(err.Error())
-			h.addErr2Stats()
-		}
+		h.SendMessage(client, "unknown command")
 	}
 	return false
+}
+
+func (h *Hub) HandleTimeCommand(client *domain.Client) {
+	timeMsg := fmt.Sprintf("Server time: %s", time.Now().Format("2006-01-02 15:04:05"))
+	h.SendMessage(client, timeMsg)
 }
 
 func (h *Hub) HandleHelpCommand(client *domain.Client) {
@@ -236,11 +231,20 @@ func (h *Hub) HandleHelpCommand(client *domain.Client) {
   /help  - Show this help message
   /users - List all online users
   /history - Show recent chat history
+  /time - Show current server time
   /quit  - Leave the chat room
 `
-	if _, err := client.Conn.Write([]byte(helpMsg)); err != nil {
-		h.logger.Error(err.Error())
-		h.addErr2Stats()
+	h.SendMessage(client, helpMsg)
+}
+
+func (h *Hub) SendMessage(client *domain.Client, text string) {
+	client.WriteCh <- domain.ChatMessage{
+		ClientID:    uuid.NewString(),
+		ClientType:  "system",
+		Content:     text,
+		MessageID:   uuid.NewString(),
+		MessageType: "notification",
+		Timestamp:   time.Now(),
 	}
 }
 
@@ -299,32 +303,16 @@ func (h *Hub) notifyShutdown(msgText string) {
 }
 
 func (h *Hub) Shutdown(ctx context.Context) error {
-	tickerTimer := time.NewTicker(time.Second)
-	secondsLeft := 30
-
+	h.notifyShutdown("Server is shutting down. Goodbye!")
 	clients := h.getActiveClients()
-	h.notifyShutdown("Server is shutting down in 30 seconds.")
 
-	for {
-		select {
-		case <-tickerTimer.C:
-			secondsLeft--
-			switch secondsLeft {
-			case 20:
-				h.notifyShutdown("20 seconds left")
-			case 10:
-				h.notifyShutdown("10 seconds left until shutdown")
-			case 5:
-				h.notifyShutdown("Server is shutting down in 5 seconds. Goodbye!")
-			}
-		case <-ctx.Done():
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-
-			for _, c := range clients {
-				c.Conn.Close()
-			}
-		}
+	select {
+	case <-ctx.Done():
+	case <-time.After(2):
 	}
+	for _, c := range clients {
+		c.Conn.Close()
+	}
+
+	return nil
 }
