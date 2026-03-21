@@ -21,7 +21,7 @@ type Hub struct {
 	broadcast              chan domain.ChatMessage
 	register               chan *domain.Client
 	unregister             chan *domain.Client
-	requests               chan Request
+	Requests               chan Request
 	logger                 *slog.Logger
 	totalMessagesProcessed atomic.Int64
 	activeConnections      atomic.Int64
@@ -36,7 +36,7 @@ func NewHub(logger *slog.Logger, start time.Time) *Hub {
 		broadcast:  make(chan domain.ChatMessage),
 		register:   make(chan *domain.Client),
 		unregister: make(chan *domain.Client),
-		requests:   make(chan Request, 1),
+		Requests:   make(chan Request, 1),
 		logger:     logger,
 		startTime:  start,
 	}
@@ -49,7 +49,7 @@ func (h *Hub) Run() {
 			h.clients[client] = true
 		case client := <-h.unregister:
 			h.cleanupClient(client)
-		case request := <-h.requests:
+		case request := <-h.Requests:
 			request.execute(h.clients)
 		case msg := <-h.broadcast:
 			h.BroadcastMessage(msg)
@@ -74,8 +74,8 @@ func (h *Hub) BroadcastMessage(msg domain.ChatMessage) {
 	}
 }
 
-func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, history *chat.History) {
-	client := h.setupClientConnection(conn)
+func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, nick string, history *chat.History) {
+	client := h.setupClientConnection(conn, nick)
 	go h.clientWriter(client)
 	h.register <- client
 	h.activeConnections.Add(1)
@@ -151,20 +151,20 @@ func (h *Hub) handleClientMessages(ctx context.Context, client *domain.Client, h
 
 func (h *Hub) GetActiveClientsIDs() []string {
 	resChan := make(chan ActiveClientsIDsResult, 1)
-	h.requests <- &ActiveClientsIDsRequest{resChan}
+	h.Requests <- &ActiveClientsIDsRequest{resChan}
 
 	return <-resChan
 }
 
 func (h *Hub) GetClientCount() int {
 	resChan := make(chan ClientsCountResult, 1)
-	h.requests <- &ClientsCountRequest{resChan}
+	h.Requests <- &ClientsCountRequest{resChan}
 	return int(<-resChan)
 }
 
-func (h *Hub) setupClientConnection(conn net.Conn) *domain.Client {
+func (h *Hub) setupClientConnection(conn net.Conn, nick string) *domain.Client {
 	client := &domain.Client{
-		ID:       domain.GenerateClientID(),
+		ID:       nick,
 		Conn:     conn,
 		JoinTime: time.Now(),
 		WriteCh:  make(chan domain.ChatMessage, 100),
@@ -287,7 +287,7 @@ func (h *Hub) GetStats() ServerStats {
 
 func (h *Hub) getActiveClients() []*domain.Client {
 	response := make(chan ActiveClientsResult)
-	h.requests <- &ActiveClientsRequest{response}
+	h.Requests <- &ActiveClientsRequest{response}
 	return <-response
 }
 
