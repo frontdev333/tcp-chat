@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"frontdev333/tcp-chat/internal/chat"
+	"frontdev333/tcp-chat/internal/config"
 	"frontdev333/tcp-chat/internal/hub"
 	"log/slog"
 	"net"
@@ -19,10 +20,10 @@ func StartEchoServer(
 	hub *hub.Hub,
 	history *chat.History,
 	logger *slog.Logger,
-	port string,
+	config config.ServerConfig,
 ) error {
 	logger.Info("server started")
-	listener, err := net.Listen("tcp", port)
+	listener, err := net.Listen("tcp", ":"+config.Port)
 	if err != nil {
 		return err
 	}
@@ -47,6 +48,11 @@ func StartEchoServer(
 			conn.Close()
 			return ctx.Err()
 		default:
+			if hub.GetClientCount() >= config.MaxConnections {
+				conn.Close()
+				logger.Warn("Maximum connections limit")
+				continue
+			}
 			go performHandshake(ctx, hub, conn, history)
 		}
 	}

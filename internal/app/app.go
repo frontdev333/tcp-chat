@@ -27,7 +27,7 @@ func Run(ctx context.Context, logger *slog.Logger, config config.ServerConfig) {
 	go hub.Run()
 
 	go func() {
-		err := server.StartEchoServer(ctx, hub, history, logger, ":"+config.Port)
+		err := server.StartEchoServer(ctx, hub, history, logger, config)
 		if err != nil {
 			logger.Error(err.Error())
 			return
