@@ -78,7 +78,7 @@ out:
 
 			i++
 			if i == 3 {
-				if _, err := conn.Write([]byte("Your three tries have been spend")); err != nil {
+				if _, err := conn.Write([]byte("Your three tries have been spent")); err != nil {
 					slog.Error(err.Error())
 				}
 				conn.Close()
@@ -97,17 +97,17 @@ out:
 			if id == nick {
 				i++
 				if i == 3 {
-					if _, err := conn.Write([]byte("Your three tries have been spend")); err != nil {
+					if _, err := conn.Write([]byte("Your three tries have been spent")); err != nil {
 						slog.Error(err.Error())
 					}
 					conn.Close()
 					return
 				}
 
-				if _, err := conn.Write([]byte("This nickname is already is use")); err != nil {
+				if _, err := conn.Write([]byte("This nickname is already in use")); err != nil {
 					slog.Error(err.Error())
-					continue out
 				}
+				continue out
 			}
 		}
 		isSuccess = true
