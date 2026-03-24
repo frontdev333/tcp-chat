@@ -68,7 +68,7 @@ func (h *Hub) dispatchMessage(msg domain.ChatMessage) {
 	h.totalMessagesProcessed.Add(1)
 
 	for client := range h.clients {
-		if client.ID == msg.PureClientID() {
+		if client.ID == msg.ClientID {
 			continue
 		}
 		select {

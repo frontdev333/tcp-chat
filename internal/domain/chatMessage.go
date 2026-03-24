@@ -2,13 +2,10 @@ package domain
 
 import (
 	"fmt"
-	"regexp"
 	"time"
 
 	"github.com/google/uuid"
 )
-
-var pureClientIDRegex = regexp.MustCompile("[^0-9]")
 
 type ChatMessage struct {
 	ClientID    string    `json:"client_id"`
@@ -33,20 +30,14 @@ func FormatMessage(msg ChatMessage) string {
 }
 
 func ParseIncomingMessage(raw string, senderID string) ChatMessage {
-
-	clientId := fmt.Sprintf("<User_%s>", senderID)
 	msgId := uuid.New().String()
 
 	return ChatMessage{
-		ClientID:    clientId,
+		ClientID:    senderID,
 		ClientType:  "user",
 		Content:     raw,
 		MessageID:   msgId,
 		MessageType: "user",
 		Timestamp:   time.Now(),
 	}
-}
-
-func (m *ChatMessage) PureClientID() string {
-	return pureClientIDRegex.ReplaceAllString(m.ClientID, "")
 }

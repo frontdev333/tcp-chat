@@ -2,10 +2,7 @@ package domain
 
 import (
 	"net"
-	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Client struct {
@@ -13,9 +10,4 @@ type Client struct {
 	Conn     net.Conn  `json:"conn"`
 	JoinTime time.Time `json:"join_time"`
 	WriteCh  chan ChatMessage
-}
-
-func GenerateClientID() string {
-	clientIDUint := uint64(uuid.New().ID())
-	return strconv.FormatUint(clientIDUint, 10)
 }
