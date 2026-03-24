@@ -23,13 +23,13 @@
 2. Запустите сервер:
 
 ```bash
-go run main.go
+go run ./cmd/server
 ```
 
 Или с флагами конфигурации:
 
 ```bash
-go run main.go -port 9000 -max-connections 50 -log-level DEBUG
+go run ./cmd/server -port 9000 -max-connections 50 -log-level DEBUG
 ```
 
 ### Сборка бинарного файла

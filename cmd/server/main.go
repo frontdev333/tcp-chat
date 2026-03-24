@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"frontdev333/tcp-chat/internal"
 	"frontdev333/tcp-chat/internal/app"
 	"frontdev333/tcp-chat/internal/config"
+	"frontdev333/tcp-chat/internal/logger"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -21,7 +21,7 @@ func main() {
 		return
 	}
 
-	logger := slog.New(internal.NewHandler(os.Stdout, "TCP-CHAT", config.LogLevel))
+	logger := slog.New(logger.NewHandler(os.Stdout, "TCP-CHAT", config.LogLevel))
 
 	app.Run(ctx, logger, config)
 }
