@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,6 +29,7 @@ type Hub struct {
 	errorCount             atomic.Int64
 	lastError              atomic.Pointer[string]
 	startTime              time.Time
+	wg                     *sync.WaitGroup
 }
 
 func NewHub(logger *slog.Logger, start time.Time) *Hub {
@@ -39,6 +41,7 @@ func NewHub(logger *slog.Logger, start time.Time) *Hub {
 		Requests:   make(chan Request, 1),
 		logger:     logger,
 		startTime:  start,
+		wg:         &sync.WaitGroup{},
 	}
 }
 
@@ -80,6 +83,7 @@ func (h *Hub) dispatchMessage(msg domain.ChatMessage) {
 
 func (h *Hub) RegisterClient(ctx context.Context, conn net.Conn, nick string, history *chat.History) {
 	client := h.setupClientConnection(conn, nick)
+	h.wg.Add(1)
 	go h.clientWriter(client)
 	h.register <- client
 	h.activeConnections.Add(1)
@@ -184,6 +188,7 @@ func (h *Hub) cleanupClient(client *domain.Client) {
 		delete(h.clients, client)
 		client.Conn.Close()
 		close(client.WriteCh)
+		h.wg.Done()
 		h.activeConnections.Add(-1)
 	}
 }
@@ -310,10 +315,18 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	h.notifyShutdown("Server is shutting down. Goodbye!")
 	clients := h.getActiveClients()
 
+	doneCh := make(chan struct{})
+
+	go func() {
+		h.wg.Wait()
+		close(doneCh)
+	}()
+
 	select {
 	case <-ctx.Done():
-	case <-time.After(2):
+	case <-doneCh:
 	}
+
 	for _, c := range clients {
 		c.Conn.Close()
 	}
