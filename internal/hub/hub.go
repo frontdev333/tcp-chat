@@ -52,12 +52,16 @@ func (h *Hub) Run() {
 		case request := <-h.Requests:
 			request.execute(h.clients)
 		case msg := <-h.broadcast:
-			h.BroadcastMessage(msg)
+			h.dispatchMessage(msg)
 		}
 	}
 }
 
 func (h *Hub) BroadcastMessage(msg domain.ChatMessage) {
+	h.broadcast <- msg
+}
+
+func (h *Hub) dispatchMessage(msg domain.ChatMessage) {
 	h.totalMessagesProcessed.Add(1)
 
 	for client := range h.clients {
